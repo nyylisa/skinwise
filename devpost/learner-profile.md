@@ -10,9 +10,9 @@ doc: learner-profile
 - **Target User:** Daily skincare consumers introducing new active products into an existing routine.
 - **Core MVP Feature:** Pairwise Product Compatibility Checker. User enters or selects two skincare products, and the system analyzes ingredient interactions.
 - **Expected Output:**
-  - Interaction status: Safe, Caution, or Conflict.
+  - Interaction status: Safe, Caution, Conflict, or Insufficient Data.
   - Conflicting active compounds identified (e.g., AHA/BHA + Retinoid).
-  - Actionable timing advice (e.g., Vitamin C in the AM, Retinol in the PM).
+  - Actionable timing advice (e.g., Vitamin C in the AM, Retinol in the PM, or cautious patch-test guidance).
 - **Strictly Out of Scope:** User authentication/accounts, database web-scraping pipelines, routine tracking calendars, ecommerce links, medical diagnoses, and general free-form chat assistants.
 
 ## Demonstrated Technical and Agent Experience

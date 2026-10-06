@@ -1,35 +1,41 @@
 ---
 doc: spec
-status: draft
+status: approved
 ---
 
 # SkinWise — Technical Specification
 
 ## How This Works, In Plain Language
-SkinWise is a full-stack, single-page web utility built with Next.js and Tailwind CSS. When a user selects two products or pastes ingredient formulas, the browser sends both ingredient strings to a server-side API route (`/api/analyze`). 
+SkinWise is a full-stack, single-page web utility built with Next.js and Tailwind CSS. When a user selects two products or pastes ingredient formulas, the browser sends both ingredient strings to a server-side API route (`app/api/analyze/route.ts`).
 
-Inside that API route, the server constructs a structured prompt embedding a curated active ingredient compatibility matrix (covering Retinoids, Direct Acids AHA/BHA, L-Ascorbic Acid, Niacinamide, Peptides, and Inert Hydrators) and submits it to the Google Gemini API with native Structured Outputs (JSON Schema). The LLM extracts the specific active compounds from the formulas, compares them against the scientific rules, and returns a strictly typed JSON payload containing a status verdict (`CONFLICT`, `CAUTION`, or `SAFE`), active compound pill tags, a two-sentence biochemical risk explanation, and an actionable timing protocol. 
+Inside that API route, the server executes a **Deterministic Rule Engine**:
+1. `lib/actives.ts` normalizes and parses the raw INCI ingredient strings, extracting recognized active compounds (e.g., Salicylic Acid, Glycolic Acid, Retinol, L-Ascorbic Acid, Niacinamide, Peptides, Ceramides).
+2. `lib/matrix.ts` provides scientific conflict tables defining interaction rules across active classes (e.g., BHA + Retinoid &rarr; `CONFLICT`, Vitamin C + BHA &rarr; `CAUTION`, Retinol + Barrier Lipids &rarr; `SAFE`).
+3. `lib/engine.ts` evaluates the parsed actives against the conflict tables, deterministically determining the 4-state verdict badge (`CONFLICT`, `CAUTION`, `SAFE`, or `INSUFFICIENT_DATA`), identified conflict pairs, and the timing protocol schedule (`ALTERNATE_DAYS`, `AM_PM_SPLIT`, `LAYER_TOGETHER`, or `UNKNOWN`).
+4. `lib/gemini.ts` is invoked optionally to synthesize a natural language summary and biochemical explanation. If the Gemini API key is missing or the call fails, the deterministic engine supplies default rule-based scientific explanations and protocols instantly without downtime.
 
-The frontend receives this payload and immediately renders high-contrast status badges and scheduling guidance, giving the user a definitive, scientific verdict in seconds without storing anything in a database.
+The API response is strictly validated against a shared Zod schema (`types/analysis.ts`) and returned to the frontend. The client renders high-contrast status badges and scheduling guidance in seconds.
 
 ## The Core Journey Through the System
 1. **Initial Load:** The client loads `app/page.tsx` on `http://localhost:3000`. In-memory state defaults to Case 1 presets: Card 1 has Paula's Choice 2% BHA and Card 2 has The Ordinary 0.5% Retinol (`prd.md > The Core Journey`, `prd.md > Screens and Layout`).
-2. **Preset or Custom Input:** Clicking a top demo button (`components/PresetToolbar.tsx`) or picking a preset dropdown (`components/ProductInputCard.tsx`) updates local React state (`product1`, `product2`), populating product names and full INCI textareas (`prd.md > Quick-Load Demo Presets`, `prd.md > Product Input & Ingredient Handling`).
+2. **Preset, Ingredient Autocomplete, or Custom Input:** Clicking a top demo button (`components/PresetToolbar.tsx`) or picking a preset dropdown (`components/ProductInputCard.tsx`) updates local React state (`product1`, `product2`), populating product names and full INCI textareas from `lib/presets.ts`. Alternatively, users can search recognized active ingredients from `lib/actives.ts` with instant autocomplete or paste raw text. The card immediately displays recognized active chips or triggers an unrecognized ingredient warning notice (`prd.md > Quick-Load Demo Presets`, `prd.md > Product Input & Ingredient Handling`).
 3. **Trigger Analysis:** The user clicks "Check Compatibility". The client sets `isLoading = true`, locks inputs, and executes a `POST` request to `/api/analyze` passing `{ product1Name, product1Ingredients, product2Name, product2Ingredients }`.
-4. **Server Processing & Gemini Call:** `app/api/analyze/route.ts` receives the payload, validates strings with Zod, and queries Google Gemini using the `@google/genai` SDK with strict JSON schema enforcement and system matrix rules (`prd.md > Compatibility Analysis & Protocol Engine`).
-5. **Render Verdict:** The API responds with the validated `AnalysisResult` JSON. The client sets `isLoading = false` and mounts `components/ResultPanel.tsx` displaying the high-contrast verdict badge, active pill tags, biochemical risk rationale, and timing schedule (`prd.md > Compatibility Analysis & Protocol Engine`).
-6. **Error Handling:** If the network fails or Gemini returns an error, the client catches the exception and renders an inline warning banner with a "Retry Analysis" button while keeping user text intact (`prd.md > States and Boundaries`).
+4. **Server Processing & Deterministic Evaluation:** `app/api/analyze/route.ts` receives the payload, validates request inputs via `AnalyzeRequestBody` schema, invokes `lib/actives.ts` to parse compounds, queries `lib/matrix.ts` rules, and runs `lib/engine.ts` to compute the verdict, conflict pairs, and timing protocol.
+5. **Optional LLM Summary:** The route handler optionally calls `lib/gemini.ts` to generate an enriched biochemical rationale. If Gemini is unreachable or disabled, built-in rule rationales are used.
+6. **Render Verdict:** The API responds with the validated `AnalysisResult` JSON matching `AnalysisResultSchema`. The client sets `isLoading = false` and mounts `components/ResultPanel.tsx` displaying the high-contrast 4-state verdict badge (**CONFLICT**, **CAUTION**, **SAFE**, or **INSUFFICIENT_DATA**), active pill tags, biochemical risk rationale, and timing schedule (`prd.md > Compatibility Analysis & Deterministic Rule Engine`).
+7. **Error Handling:** If the network fails or request payload is invalid, the client catches the exception and renders an inline warning banner with a "Retry Analysis" button while keeping user text intact (`prd.md > States and Boundaries`).
 
 ## Stack
 - **Framework:** Next.js 15 (App Router) with React 19 & TypeScript — Co-locates single-page UI and serverless API route in a unified repository with zero CORS overhead and fast refresh. [Next.js Docs](https://nextjs.org/docs)
 - **Styling:** Tailwind CSS — Provides utility-first styling for the clinical laboratory aesthetic (`slate-50`, `rose-600`, `amber-600`, `emerald-600`) and responsive side-by-side grid layout. [Tailwind CSS Docs](https://tailwindcss.com/docs)
 - **Icons:** `lucide-react` — Lightweight clinical iconography (ShieldAlert, AlertTriangle, CheckCircle2, RefreshCw, Clock, Sparkles). [Lucide Docs](https://lucide.dev)
-- **Schema Validation:** Zod — Validates runtime API request payloads and Gemini structured output responses. [Zod Docs](https://zod.dev)
-- **AI Engine:** Google Gemini (`gemini-2.5-flash` or `gemini-1.5-flash`) via `@google/genai` (or `@google/generative-ai`) — Provides sub-second entity extraction and synthesis constrained by native JSON schema output. [Google Gen AI Docs](https://ai.google.dev/docs)
+- **Schema Validation:** Zod — Validates runtime API request payloads and deterministic response structures via `types/analysis.ts`. [Zod Docs](https://zod.dev)
+- **Rule Engine:** Pure TypeScript modules (`lib/actives.ts`, `lib/matrix.ts`, `lib/engine.ts`) — Zero external runtime dependencies, 100% deterministic, sub-millisecond execution, zero hallucinations.
+- **Optional AI Summarizer:** Google Gemini (`gemini-2.5-flash` or `gemini-1.5-flash`) via `@google/genai` (or `@google/generative-ai`) in `lib/gemini.ts` — Provides optional natural language polish constrained strictly by the deterministic verdict. [Google Gen AI Docs](https://ai.google.dev/docs)
 
 ## Where It Runs and How Someone Tries It
 - **Local Runtime:** Node.js 18+ on Windows/macOS/Linux.
-- **Environment Configuration:** `.env.local` containing `GEMINI_API_KEY=your_gemini_api_key`.
+- **Environment Configuration:** `.env.local` containing `GEMINI_API_KEY=your_gemini_api_key` (optional; engine functions completely in offline fallback mode if omitted).
 - **Start Command:**
   ```bash
   npm install
@@ -45,14 +51,18 @@ Implements `prd.md > Look and Feel` and `scope.md > Inspiration & Identity`.
   - Background: `bg-slate-50`
   - Cards: `bg-white` with `border border-slate-200 shadow-sm rounded-xl`
   - Text: Headers `text-slate-900`, body instructions `text-slate-600`, labels `text-slate-500`
-  - Verdict Conflict: `bg-rose-50 text-rose-700 border-rose-200`
-  - Verdict Caution: `bg-amber-50 text-amber-700 border-amber-200`
-  - Verdict Safe: `bg-emerald-50 text-emerald-700 border-emerald-200`
+  - 4-State Status Badges:
+    - Verdict CONFLICT: `bg-rose-50 text-rose-700 border-rose-200`
+    - Verdict CAUTION: `bg-amber-50 text-amber-700 border-amber-200`
+    - Verdict SAFE: `bg-emerald-50 text-emerald-700 border-emerald-200`
+    - Verdict INSUFFICIENT_DATA: `bg-slate-100 text-slate-700 border-slate-300`
 - **Typography:** Sans-serif (`Inter` or `Geist`) for titles, body, and action buttons; monospace (`font-mono`) for active compound pills, percentages, and chemical INCI names.
 
-## Components
+## Modules and Components
 
-### PresetToolbar
+### Frontend Components (`components/`, `app/page.tsx`, `lib/presets.ts`)
+
+#### PresetToolbar (`components/PresetToolbar.tsx`)
 Implements `prd.md > Quick-Load Demo Presets`.
 - Top-mounted horizontal pill bar displaying three 1-click demo buttons:
   - "Load Conflict Demo (Case 1)" &rarr; Loads Paula's Choice BHA + The Ordinary Retinol.
@@ -60,89 +70,107 @@ Implements `prd.md > Quick-Load Demo Presets`.
   - "Load Safe Demo (Case 3)" &rarr; Loads The Ordinary Retinol + CeraVe PM Moisturizer.
 - Clears previous results and sets the inputs immediately into active readiness.
 
-### ProductInputCard
+#### ProductInputCard (`components/ProductInputCard.tsx`)
 Implements `prd.md > Product Input & Ingredient Handling`.
 - Two side-by-side instances: Card 1 ("Product 1") and Card 2 ("Product 2").
 - Contains:
   - Preset select dropdown populated from `lib/presets.ts`.
   - Product name input field (editable).
+  - Searchable active ingredient autocomplete input matching against `KNOWN_ACTIVES` (`lib/actives.ts`).
   - Expandable INCI ingredient textarea with `font-mono text-xs`, auto-populated on preset selection and freely editable.
+  - Real-time active preview tags: renders detected active pill tags (`Retinoid`, `Direct Acid`, `Vitamin C`, `Niacinamide`, `Barrier Support`).
+  - Upfront unrecognized ingredient indicator: displays an inline notice (`⚠️ Contains ingredients not found in SkinWise active catalog`) if formulas contain uncataloged compounds, preventing mistaken assumptions of safety.
   - Clear / reset button.
 
-### ResultPanel
-Implements `prd.md > Compatibility Analysis & Protocol Engine`.
+#### ResultPanel (`components/ResultPanel.tsx`)
+Implements `prd.md > Compatibility Analysis & Deterministic Rule Engine`.
 - Conditionally mounted upon successful API response.
 - Renders:
-  - Verdict Status Banner: Large badge with high-contrast icon (ShieldAlert for Conflict, AlertTriangle for Caution, CheckCircle2 for Safe).
+  - Verdict Status Banner: Large badge with high-contrast icon (ShieldAlert for CONFLICT, AlertTriangle for CAUTION, CheckCircle2 for SAFE, HelpCircle for INSUFFICIENT_DATA).
   - Active Compounds Tags: Detected active pills grouped by Product 1 and Product 2 in `font-mono`.
   - Biochemical Risk Explanation: Clear 2-sentence rationale formatted in crisp typography.
-  - Actionable Timing Protocol Card: Highlighted schedule box indicating concrete routine timing (AM/PM separation or alternating days).
+  - Actionable Timing Protocol Card: Highlighted schedule box indicating concrete routine timing (AM/PM separation, alternating days, or cautious guidance).
 
-### AnalyzeRoute (`app/api/analyze/route.ts`)
-Implements `prd.md > Compatibility Analysis & Protocol Engine`, `prd.md > States and Boundaries`.
-- Handles `POST` requests.
-- Validates request body using `AnalyzeRequestSchema`.
-- Calls Gemini API with `responseMimeType: "application/json"`, enforcing `AnalysisResponseSchema` and injecting the scientific rule matrix from `lib/matrix.ts`.
-- Handles edge cases:
-  - If both formulas lack recognized active acids/retinoids/actives, forces a `SAFE` verdict with inert hydrators copy.
-  - If Gemini API fails or rate limits, returns structured HTTP 500/429 JSON so the UI renders a retry toast.
+### Backend & Rule Engine (`lib/`, `app/api/analyze/route.ts`)
 
-## Data Model
+#### Active Ingredient Parser (`lib/actives.ts`)
+- Defines `KNOWN_ACTIVES` canonical taxonomy and regular expression patterns used across both client-side autocomplete selection and server-side analysis.
+- Normalizes raw ingredient strings and matches known chemical active aliases (AHAs, BHAs, Retinoids, Vitamin C, Niacinamide, Peptides, Ceramides).
+- Returns structured array of detected active categories and matched names for each product.
 
-### Client State
-```typescript
-interface ProductInput {
-  name: string;
-  ingredients: string;
-}
+#### Active Conflict Matrix (`lib/matrix.ts`)
+- Contains static scientific conflict tables and interaction severity rules.
+- Maps combinations of active classes to conflict level (`CONFLICT`, `CAUTION`, `SAFE`), scientific mechanism, and recommended scheduling pattern (`ALTERNATE_DAYS`, `AM_PM_SPLIT`, `LAYER_TOGETHER`).
 
-interface AnalysisResult {
-  status: "CONFLICT" | "CAUTION" | "SAFE";
-  summaryTitle: string;
-  activesProduct1: string[];
-  activesProduct2: string[];
-  conflictPairs: Array<{
-    compound1: string;
-    compound2: string;
-    mechanism: string;
-  }>;
-  biochemicalExplanation: string;
-  timingProtocol: {
-    scheduleType: "ALTERNATE_DAYS" | "AM_PM_SPLIT" | "LAYER_TOGETHER" | "INERT";
-    guidanceText: string;
-  };
-}
-```
+#### Deterministic Rule Engine (`lib/engine.ts`)
+- Pure evaluation function taking parsed actives from both products and matching them against `lib/matrix.ts`.
+- Computes 4-state verdict (`CONFLICT`, `CAUTION`, `SAFE`, `INSUFFICIENT_DATA`):
+  - Returns `INSUFFICIENT_DATA` (with `UNKNOWN` schedule) if either or both products lack recognized actives.
+  - Returns `CONFLICT` or `CAUTION` when active pairs match respective matrix rules.
+  - Returns `SAFE` strictly when an explicit positive compatibility rule is matched.
+  - Defaults unverified combinations of recognized actives to `CAUTION` (never defaults to `SAFE`).
+- Guarantees 100% deterministic, instant results with zero hallucination.
 
-### Request & Response Schemas (Zod)
+#### Gemini Summarizer (`lib/gemini.ts`)
+- Optional Google Gemini client using `@google/genai` (or `@google/generative-ai`).
+- Generates natural language biochemical explanations constrained strictly by the deterministic evaluation result.
+- Provides seamless fallback to built-in rule explanations if API is unreachable or omitted.
+
+#### Route Handler (`app/api/analyze/route.ts`)
+- Next.js serverless route handler for `POST /api/analyze`.
+- Validates request body using `AnalyzeRequestSchema` from `types/analysis.ts`.
+- Coordinates parsing (`lib/actives.ts`), evaluation (`lib/engine.ts`), and optional summary generation (`lib/gemini.ts`).
+- Validates and returns `AnalysisResultSchema` JSON payload.
+
+## Data Model (`types/analysis.ts`)
+
 ```typescript
 import { z } from "zod";
 
-export const AnalyzeRequestSchema = z.object({
-  product1Name: z.string().min(1),
-  product1Ingredients: z.string().min(1),
-  product2Name: z.string().min(1),
-  product2Ingredients: z.string().min(1),
-});
+export const CompatibilityStatusEnum = z.enum([
+  "CONFLICT",
+  "CAUTION",
+  "SAFE",
+  "INSUFFICIENT_DATA",
+]);
+export type CompatibilityStatus = z.infer<typeof CompatibilityStatusEnum>;
 
-export const AnalysisResponseSchema = z.object({
-  status: z.enum(["CONFLICT", "CAUTION", "SAFE"]),
+export const ScheduleTypeEnum = z.enum([
+  "ALTERNATE_DAYS",
+  "AM_PM_SPLIT",
+  "LAYER_TOGETHER",
+  "INERT",
+  "UNKNOWN",
+]);
+export type ScheduleType = z.infer<typeof ScheduleTypeEnum>;
+
+export const ConflictPairSchema = z.object({
+  compound1: z.string(),
+  compound2: z.string(),
+  mechanism: z.string(),
+});
+export type ConflictPair = z.infer<typeof ConflictPairSchema>;
+
+export const AnalysisResultSchema = z.object({
+  status: CompatibilityStatusEnum,
   summaryTitle: z.string(),
   activesProduct1: z.array(z.string()),
   activesProduct2: z.array(z.string()),
-  conflictPairs: z.array(
-    z.object({
-      compound1: z.string(),
-      compound2: z.string(),
-      mechanism: z.string(),
-    })
-  ),
+  conflictPairs: z.array(ConflictPairSchema),
   biochemicalExplanation: z.string(),
   timingProtocol: z.object({
-    scheduleType: z.enum(["ALTERNATE_DAYS", "AM_PM_SPLIT", "LAYER_TOGETHER", "INERT"]),
+    scheduleType: ScheduleTypeEnum,
     guidanceText: z.string(),
   }),
 });
+export type AnalysisResult = z.infer<typeof AnalysisResultSchema>;
+
+export interface AnalyzeRequestBody {
+  product1Name?: string;
+  product1Ingredients: string;
+  product2Name?: string;
+  product2Ingredients: string;
+}
 ```
 
 ## File Structure
@@ -151,18 +179,22 @@ skinwise/
 ├── app/
 │   ├── api/
 │   │   └── analyze/
-│   │       └── route.ts          # Server-side Gemini analysis endpoint
+│   │       └── route.ts          # Server-side route handler orchestrating analysis
 │   ├── globals.css               # Tailwind CSS imports & clinical base styling
 │   ├── layout.tsx                # Root layout with Inter/Geist fonts & metadata
 │   └── page.tsx                  # Main client-side single-page UI orchestrator
 ├── components/
 │   ├── PresetToolbar.tsx         # 1-click test case buttons (Conflict, Caution, Safe)
 │   ├── ProductInputCard.tsx      # Dual card with preset dropdown & editable textarea
-│   └── ResultPanel.tsx           # Verdict badge, active pills, explanation, timing protocol
+│   └── ResultPanel.tsx           # 3-tier verdict badge, active pills, explanation, timing protocol
 ├── lib/
-│   ├── presets.ts                # Curated static active products with complete INCI formulas
-│   ├── matrix.ts                 # In-prompt scientific compatibility matrix rules & prompt builder
-│   └── types.ts                  # Shared TypeScript interfaces & Zod schemas
+│   ├── actives.ts                # INCI ingredient parsing and active compound detection
+│   ├── matrix.ts                 # Active conflict tables and scientific interaction rules
+│   ├── engine.ts                 # Pure deterministic compatibility evaluation engine
+│   ├── gemini.ts                 # Optional Google Gemini client for natural language summaries
+│   └── presets.ts                # Curated static active products with complete INCI formulas
+├── types/
+│   └── analysis.ts               # Shared Zod schemas and TypeScript interfaces
 ├── devpost/                      # Hackathon planning workspace
 │   ├── learner-profile.md
 │   ├── scope.md
@@ -176,27 +208,25 @@ skinwise/
 ```
 
 ## External Services and Dependencies
-- **Google Gemini API (`@google/genai` or `@google/generative-ai`):**
+- **Deterministic Rule Engine (Core):** Local TypeScript modules (`lib/actives.ts`, `lib/matrix.ts`, `lib/engine.ts`) with zero external API requirements.
+- **Optional Google Gemini API (`@google/genai` or `@google/generative-ai` in `lib/gemini.ts`):**
   - Model: `gemini-2.5-flash` (or `gemini-1.5-flash`)
-  - Auth: `GEMINI_API_KEY` header/environment variable
-  - Endpoint / Method: SDK client method `ai.models.generateContent({ model, contents, config: { responseMimeType: "application/json", responseSchema } })`
-  - Cost: Free tier / Pay-as-you-go within hackathon budget limits.
+  - Auth: `GEMINI_API_KEY` environment variable (optional; system falls back to rule rationales if omitted)
+  - Endpoint / Method: `generateContent` for natural language summary polish.
   - Documentation: [https://ai.google.dev/docs](https://ai.google.dev/docs)
 
 ## Important Failure Modes
-- **Gemini API Error or Quota Exhaustion:** If the external API call fails, times out, or quota is reached, `app/api/analyze/route.ts` returns an HTTP 500 error with `{ error: "Analysis service temporarily unavailable" }`. The frontend renders a dismissible warning toast with an inline "Retry Analysis" button while keeping user text intact.
+- **Gemini API Error or Quota Exhaustion:** If the external Gemini call fails or times out, `app/api/analyze/route.ts` seamlessly uses the deterministic rule engine's built-in biochemical explanation and protocol, returning HTTP 200 with full analysis rather than failing.
 - **Missing or Incomplete Input:** If either product textarea is blank, the "Check Compatibility" button remains disabled with helper guidance, preventing invalid server requests.
-- **Inert Hydrating Ingredients (Zero Actives):** If formulas contain only gentle moisturizers (e.g. Water, Glycerin, Petrolatum), the system evaluates them as `SAFE` with explicit copy clarifying that no conflicting direct acids or retinoids were detected and formulas are safe to layer.
+- **Missing Actives or Unrecognized Formulas:** If either or both formulas contain no recognized actives, `lib/engine.ts` evaluates them conservatively as `INSUFFICIENT_DATA` with `UNKNOWN` schedule. Furthermore, the client UI flags uncataloged ingredients with an upfront warning banner, ensuring users understand before testing that compatibility cannot be verified.
+- **Unverified Dual-Active Pairs:** If both products have recognized actives but no verified rule exists in the scientific matrix, the engine defaults to `CAUTION` with `UNKNOWN` schedule (never defaults to `SAFE`).
 
 ## What Was Simplified and Why
-- **Prompt-Injected Compatibility Matrix** instead of a dedicated PostgreSQL database: Embedding the scientific rules directly into the Gemini prompt enforces deterministic guardrails without hosting database infrastructure, fitting neatly into the 2–4 hour PoC.
+- **Deterministic Rule Engine** instead of pure LLM evaluation: Guaranteed chemical accuracy and reproducible verdicts without latency, prompt drift, or hallucination.
 - **Static In-Memory Presets** instead of dynamic cosmetic database web scrapers: Preloading verified popular formulas in `lib/presets.ts` guarantees instant, reliable demo data without fragile external web scraping dependencies.
 - **Session-Only Client State** instead of user authentication & accounts: Zero setup friction allows anyone (or hackathon judges) to evaluate compatibility instantly.
 
 ## Decisions and Open Issues
 - **Framework Choice:** Next.js 15 (App Router) + Tailwind CSS selected for rapid single-repo deployment and zero CORS friction.
-- **AI Architecture:** Hybrid approach pairing an LLM entity extraction and synthesis engine with an in-prompt scientific matrix guardrail and strict Zod structured outputs.
-- **One Useful Unknown & Resolution:**
-  - *Learner uncertainty:* Ensuring deterministic classification and preventing LLM hallucination on known active pairings.
-  - *Resolution:* Enforced through native JSON schema validation paired with explicit conflict rules injected into system instructions (e.g. "Direct Acid AHA/BHA + Retinoid MUST return CONFLICT; L-Ascorbic Acid + AHA/BHA MUST return CAUTION; Retinoid + Ceramide/Niacinamide MUST return SAFE").
+- **AI Architecture:** Deterministic Rule Engine for parsing, conflict table matching, and evaluation; Google Gemini reserved strictly as an optional natural language summarizer.
 - **Open Questions:** None blocking build execution. All components, schemas, endpoints, and fallbacks are fully specified.

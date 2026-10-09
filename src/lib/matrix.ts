@@ -1,5 +1,5 @@
 import { ActiveCategory } from "./actives";
-import { CompatibilityStatus, ScheduleType } from "@/types/analysis";
+import { CompatibilityStatus, ScheduleType } from "@/src/types/analysis";
 
 export interface MatrixRule {
   cat1: ActiveCategory;

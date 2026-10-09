@@ -6,7 +6,7 @@ import {
   CompatibilityStatus,
   ConflictPair,
   ScheduleType,
-} from "@/types/analysis";
+} from "@/src/types/analysis";
 
 export async function analyzePairwiseCompatibility(
   p1Ingredients: string,

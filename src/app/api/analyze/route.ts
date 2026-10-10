@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { analyzePairwiseCompatibility } from "@/lib/engine";
-import { AnalyzeRequestBody } from "@/types/analysis";
+import { analyzePairwiseCompatibility } from "@/src/lib/engine";
+import { AnalyzeRequestBody } from "@/src/types/analysis";
 
 export async function POST(req: NextRequest) {
   try {

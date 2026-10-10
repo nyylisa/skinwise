@@ -1,5 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
-import { CompatibilityStatus } from "@/types/analysis";
+import { CompatibilityStatus } from "@/src/types/analysis";
 
 const apiKey = process.env.GEMINI_API_KEY || "";
 const ai = apiKey ? new GoogleGenAI({ apiKey }) : null;

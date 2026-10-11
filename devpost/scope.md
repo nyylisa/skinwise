@@ -40,8 +40,8 @@ A crisp 1-minute video demo proving the end-to-end evaluation flow across three 
 - Single-page responsive interface with side-by-side product input cards and quick-load demo toolbar (`components/`, `app/page.tsx`, `lib/presets.ts`).
 - Curated presets for popular active skincare products + searchable recognized active ingredient selector + expandable manual INCI ingredient textboxes with live active chip preview.
 - Upfront active transparency: immediate visual chips for recognized actives and clear "unrecognized / not in system" indicators to prevent false assumptions of safety for uncataloged chemicals.
-- **Deterministic Rule Engine Architecture:**
-  - Active ingredient parser (`lib/actives.ts`) to extract recognized active compounds from raw INCI text.
+- **Hybrid ML & Rule Engine Architecture:**
+  - **Few-Shot ML Ingredient Classifier (SetFit):** Replaces fragile regex with a lightweight, robust semantic text classifier trained on just 15-20 examples per category to accurately identify active compounds from raw INCI text, even with typos or synonyms.
   - Scientific active conflict tables (`lib/matrix.ts`) mapping pairwise interactions (Retinoids, Direct Acids AHA/BHA, L-Ascorbic Acid, Niacinamide, Copper Peptides, Barrier Lipids, and Inert Hydrators).
   - Deterministic evaluation engine (`lib/engine.ts`) computing 4-state verdict badges (**CONFLICT**, **CAUTION**, **SAFE**, **INSUFFICIENT_DATA**), conflict mechanism tags, and scheduling protocols (`ALTERNATE_DAYS`, `AM_PM_SPLIT`, `LAYER_TOGETHER`, `UNKNOWN`) without hallucination risk.
   - Optional Gemini summarizer (`lib/gemini.ts`) for natural language biochemical explanations.

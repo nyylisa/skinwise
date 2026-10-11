@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AnalysisResultSchema, type AnalysisResult, type AnalyzeRequestBody } from "../../../types/analysis";
+import { type AnalyzeResponse, type AnalyzeRequest } from "../../../types/analysis";
 import type { CompatibilityPreset, ProductDraft, ProductSlot, RequestStatus } from "../../../types/compatibility";
 import { getProduct } from "../../../lib/preset";
 import { toSeverity } from "../atoms/severity";
@@ -21,7 +21,7 @@ const FALLBACK_NAME: Record<ProductSlot, string> = { 1: "Product A", 2: "Product
 export function useCompatibility() {
   const [drafts, setDrafts] = useState<Drafts>(EMPTY);
   const [status, setStatus] = useState<RequestStatus>("idle");
-  const [result, setResult] = useState<AnalysisResult | null>(null);
+  const [result, setResult] = useState<AnalyzeResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -93,7 +93,7 @@ export function useCompatibility() {
     setError(null);
     setResult(null);
 
-    const body: AnalyzeRequestBody = {
+    const body: AnalyzeRequest = {
       product1Name: d1.name.trim() || FALLBACK_NAME[1],
       product1Ingredients: d1.ingredients.trim(),
       product2Name: d2.name.trim() || FALLBACK_NAME[2],
@@ -113,13 +113,13 @@ export function useCompatibility() {
         throw new Error(json?.error ?? "We couldn't analyse these products. Please try again.");
       }
 
-      // Accept either a bare AnalysisResult or { result: AnalysisResult }.
-      const parsed = AnalysisResultSchema.safeParse(json?.result ?? json);
-      if (!parsed.success) {
+      // Accept either a bare AnalyzeResponse or { result: AnalyzeResponse }.
+      const data = json?.result ?? json;
+      if (!data || !data.status) {
         throw new Error("The analysis came back in an unexpected format. Please try again.");
       }
 
-      setResult(parsed.data);
+      setResult(data as AnalyzeResponse);
       setStatus("success");
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") return;

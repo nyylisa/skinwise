@@ -40,8 +40,8 @@ export default function VerdictHeader({ status, title, explanation, products }: 
             <p className="sw-small text-[var(--sw-muted)]">Actives in {p.name}</p>
             {p.actives.length > 0 ? (
               <ul className="mt-2 flex flex-wrap gap-2">
-                {p.actives.map((a) => (
-                  <li key={a}>
+                {p.actives.map((a, idx) => (
+                  <li key={`${a}-${idx}`}>
                     <IngredientTag label={a} tone="active" />
                   </li>
                 ))}

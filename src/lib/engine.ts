@@ -1,151 +1,162 @@
-import { extractActives } from "./actives";
-import { findRuleMatch, MatrixRule } from "./matrix";
-import { generateBiochemicalSummary } from "./gemini";
 import {
-  AnalysisResult,
-  CompatibilityStatus,
+  AnalyzeRequest,
+  AnalyzeResponse,
+  Status,
+  Schedule,
   ConflictPair,
-  ScheduleType,
-} from "@/src/types/analysis";
+} from '../types/analysis';
+import { detectedForAnalysis } from './detect';
+import { detectActivesSafe } from './detect-safe';
+import { findRule } from './matrix';
 
-export async function analyzePairwiseCompatibility(
-  p1Ingredients: string,
-  p2Ingredients: string,
-  p1Name: string = "Product 1",
-  p2Name: string = "Product 2"
-): Promise<AnalysisResult> {
-  const actives1 = extractActives(p1Ingredients);
-  const actives2 = extractActives(p2Ingredients);
+const SEVERITY: Record<Status, number> = {
+  SAFE: 0,
+  UNKNOWN: 1,
+  INSUFFICIENT_DATA: 1,
+  CAUTION: 2,
+  CONFLICT: 3,
+};
 
-  const p1Names = actives1.map((a) => a.canonicalName);
-  const p2Names = actives2.map((a) => a.canonicalName);
+const DISCLAIMER =
+  'This is an educational cosmetic ingredient tool, not medical advice. Patch test new products and consult a dermatologist for skin conditions.';
 
-  // ── Case 1: Neither product has any recognized actives ──────────────────────
-  if (actives1.length === 0 && actives2.length === 0) {
-    const explanation =
-      "We could not recognize any known active ingredients in either product. " +
-      "Our system cannot evaluate compatibility for unrecognized ingredients — " +
-      "do not assume these are safe to combine.";
-    return {
-      status: "INSUFFICIENT_DATA",
-      summaryTitle: "Cannot Evaluate: No Recognized Actives Found",
-      activesProduct1: [],
-      activesProduct2: [],
-      conflictPairs: [],
-      biochemicalExplanation: explanation,
-      timingProtocol: {
-        scheduleType: "UNKNOWN",
-        guidanceText:
-          "Neither product contains actives we recognize. Please consult a " +
-          "dermatologist or check with the brand before combining these products.",
-      },
-    };
+function insufficientData(
+  reason: string,
+  product1Actives: string[],
+  product2Actives: string[]
+): AnalyzeResponse {
+  return {
+    status: 'UNKNOWN',
+    summaryTitle: 'Insufficient Data',
+    activesProduct1: product1Actives,
+    activesProduct2: product2Actives,
+    conflictPairs: [],
+    biochemicalExplanation: reason,
+    timingProtocol: {
+      scheduleType: 'UNKNOWN',
+      guidanceText:
+        'We could not evaluate this combination. Introduce one product at a time and patch test.',
+    },
+    disclaimer: DISCLAIMER,
+  };
+}
+
+export async function analyzeCompatibility(req: AnalyzeRequest): Promise<AnalyzeResponse> {
+  const raw1 = await detectActivesSafe(req.product1Ingredients);
+  const raw2 = await detectActivesSafe(req.product2Ingredients);
+
+  const a1 = detectedForAnalysis(raw1);
+  const a2 = detectedForAnalysis(raw2);
+
+  const names1 = a1.map(a => a.canonicalName);
+  const names2 = a2.map(a => a.canonicalName);
+
+  // No recognized actives on either side
+  if (a1.length === 0 && a2.length === 0) {
+    return insufficientData(
+      'We could not recognize any known active ingredients in either product.',
+      names1,
+      names2
+    );
   }
 
-  // ── Case 2: Only one product has recognized actives ──────────────────────────
-  if (actives1.length === 0 || actives2.length === 0) {
-    const missingSide = actives1.length === 0 ? p1Name : p2Name;
-    const explanation =
-      `"${missingSide}" contains no active ingredients our system recognizes. ` +
-      "A partial analysis is not enough to confirm safety — we cannot rule out a conflict.";
-    return {
-      status: "INSUFFICIENT_DATA",
-      summaryTitle: `Cannot Evaluate: "${missingSide}" Has No Recognized Actives`,
-      activesProduct1: p1Names,
-      activesProduct2: p2Names,
-      conflictPairs: [],
-      biochemicalExplanation: explanation,
-      timingProtocol: {
-        scheduleType: "UNKNOWN",
-        guidanceText:
-          "Only one product could be analyzed. Do not assume the combination is safe. " +
-          "Introduce products one at a time and patch test before combining.",
-      },
-    };
+  // Only one side has recognized actives
+  if (a1.length === 0 || a2.length === 0) {
+    const which = a1.length === 0 ? 'Product 1' : 'Product 2';
+    return insufficientData(
+      `${which} contains no recognized active ingredients. We cannot fully evaluate compatibility.`,
+      names1,
+      names2
+    );
   }
 
-  // ── Case 3: Both products have recognized actives — run the rule engine ──────
-  const matchedRules: MatrixRule[] = [];
-  const conflictPairs: ConflictPair[] = [];
+  // Both sides have actives — run the matrix
+  const pairs: ConflictPair[] = [];
+  let worst: Status = 'SAFE';
+  let schedule: Schedule = 'LAYER_TOGETHER';
+  let instructions = '';
+  const conflictMechanisms: string[] = [];
+  const safeMechanisms: string[] = [];
+  let matchedCount = 0;
 
-  for (const a1 of actives1) {
-    for (const a2 of actives2) {
-      const rule = findRuleMatch(a1.category, a2.category);
-      if (rule) {
-        matchedRules.push(rule);
-        conflictPairs.push({
-          compound1: a1.canonicalName,
-          compound2: a2.canonicalName,
+  for (const a of a1) {
+    for (const b of a2) {
+      const rule = findRule(a.category, b.category);
+      if (!rule) continue;
+
+      matchedCount++;
+
+      if (SEVERITY[rule.status] > SEVERITY[worst]) {
+        worst = rule.status;
+      }
+
+      if (
+        rule.schedule === 'ALTERNATE_DAYS' ||
+        (rule.schedule === 'AM_PM_SPLIT' && schedule === 'LAYER_TOGETHER')
+      ) {
+        schedule = rule.schedule;
+      }
+
+      instructions = rule.instructions;
+
+      if (rule.status === 'CONFLICT' || rule.status === 'CAUTION') {
+        pairs.push({
+          compound1: a.canonicalName,
+          compound2: b.canonicalName,
           mechanism: rule.mechanism,
         });
+        conflictMechanisms.push(rule.mechanism);
+      } else {
+        safeMechanisms.push(rule.mechanism);
       }
     }
   }
 
-  let finalStatus: CompatibilityStatus;
-  let summaryTitle: string;
-  let scheduleType: ScheduleType;
-  let defaultExplanation: string;
-  let guidanceText: string;
-
-  if (matchedRules.some((r) => r.status === "CONFLICT")) {
-    // Explicit conflict rule matched
-    finalStatus = "CONFLICT";
-    const rule = matchedRules.find((r) => r.status === "CONFLICT")!;
-    summaryTitle = rule.title;
-    scheduleType = rule.scheduleType;
-    defaultExplanation = rule.defaultExplanation;
-    guidanceText = rule.defaultGuidance;
-  } else if (matchedRules.some((r) => r.status === "CAUTION")) {
-    // Explicit caution rule matched
-    finalStatus = "CAUTION";
-    const rule = matchedRules.find((r) => r.status === "CAUTION")!;
-    summaryTitle = rule.title;
-    scheduleType = rule.scheduleType;
-    defaultExplanation = rule.defaultExplanation;
-    guidanceText = rule.defaultGuidance;
-  } else if (matchedRules.some((r) => r.status === "SAFE")) {
-    // An explicit SAFE rule was matched — the only path to SAFE
-    finalStatus = "SAFE";
-    const rule = matchedRules.find((r) => r.status === "SAFE")!;
-    summaryTitle = rule.title;
-    scheduleType = rule.scheduleType;
-    defaultExplanation = rule.defaultExplanation;
-    guidanceText = rule.defaultGuidance;
-  } else {
-    // ── Case 4: Actives recognized but no rule exists for this pair ────────────
-    // Default to CAUTION — never assume safe for an untested combination.
-    finalStatus = "CAUTION";
-    summaryTitle = "Unverified Combination: Use With Caution";
-    scheduleType = "UNKNOWN";
-    defaultExplanation =
-      "Both products contain recognized active ingredients, but we don't have a " +
-      "verified compatibility rule for this specific combination. We cannot confirm " +
-      "it is safe — introduce one product at a time and monitor your skin's response.";
-    guidanceText =
-      "Patch test each product separately for 7 days before combining. " +
-      "If you experience redness, stinging, or peeling, discontinue and consult a dermatologist.";
+  // Actives found, but no rule matched → CAUTION, never default SAFE
+  if (matchedCount === 0) {
+    return {
+      status: 'CAUTION',
+      summaryTitle: 'No Verified Rule for This Combination',
+      activesProduct1: names1,
+      activesProduct2: names2,
+      conflictPairs: [],
+      biochemicalExplanation:
+        'We recognized active ingredients in both products but do not have a verified interaction rule for this specific pair. Introduce them one at a time and patch test.',
+      timingProtocol: {
+        scheduleType: 'UNKNOWN',
+        guidanceText:
+          'Start with one product for a week before introducing the second.',
+      },
+      disclaimer: DISCLAIMER,
+    };
   }
 
-  const finalExplanation = await generateBiochemicalSummary(
-    p1Name,
-    p1Names,
-    p2Name,
-    p2Names,
-    finalStatus,
-    defaultExplanation
-  );
+  const summaryTitle =
+    worst === 'CONFLICT'
+      ? 'Direct Conflict'
+      : worst === 'CAUTION'
+      ? 'Use With Care'
+      : 'Safe To Layer';
+
+  // Show warning mechanisms when the verdict is a warning;
+  // show synergy mechanisms when the verdict is safe.
+  const finalMechanisms =
+    worst === 'SAFE' ? safeMechanisms : conflictMechanisms;
+
+  const biochemicalExplanation =
+    Array.from(new Set(finalMechanisms)).join(' ');
 
   return {
-    status: finalStatus,
+    status: worst,
     summaryTitle,
-    activesProduct1: p1Names,
-    activesProduct2: p2Names,
-    conflictPairs,
-    biochemicalExplanation: finalExplanation,
+    activesProduct1: names1,
+    activesProduct2: names2,
+    conflictPairs: pairs,
+    biochemicalExplanation,
     timingProtocol: {
-      scheduleType,
-      guidanceText,
+      scheduleType: schedule,
+      guidanceText: instructions || 'Apply as you normally would.',
     },
+    disclaimer: DISCLAIMER,
   };
 }

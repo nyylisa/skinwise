@@ -1,41 +1,40 @@
-import { z } from "zod";
+export type Status = 'CONFLICT' | 'CAUTION' | 'SAFE' | 'UNKNOWN' | 'INSUFFICIENT_DATA';
 
-export const CompatibilityStatusEnum = z.enum(["CONFLICT", "CAUTION", "SAFE", "INSUFFICIENT_DATA"]);
-export type CompatibilityStatus = z.infer<typeof CompatibilityStatusEnum>;
+export type Schedule =
+  | 'LAYER_TOGETHER'
+  | 'AM_PM_SPLIT'
+  | 'ALTERNATE_DAYS'
+  | 'UNKNOWN';
 
-export const ScheduleTypeEnum = z.enum([
-  "ALTERNATE_DAYS",
-  "AM_PM_SPLIT",
-  "LAYER_TOGETHER",
-  "INERT",
-  "UNKNOWN",
-]);
-export type ScheduleType = z.infer<typeof ScheduleTypeEnum>;
-
-export const ConflictPairSchema = z.object({
-  compound1: z.string(),
-  compound2: z.string(),
-  mechanism: z.string(),
-});
-export type ConflictPair = z.infer<typeof ConflictPairSchema>;
-
-export const AnalysisResultSchema = z.object({
-  status: CompatibilityStatusEnum,
-  summaryTitle: z.string(),
-  activesProduct1: z.array(z.string()),
-  activesProduct2: z.array(z.string()),
-  conflictPairs: z.array(ConflictPairSchema),
-  biochemicalExplanation: z.string(),
-  timingProtocol: z.object({
-    scheduleType: ScheduleTypeEnum,
-    guidanceText: z.string(),
-  }),
-});
-export type AnalysisResult = z.infer<typeof AnalysisResultSchema>;
-
-export interface AnalyzeRequestBody {
+export interface AnalyzeRequest {
   product1Name?: string;
   product1Ingredients: string;
   product2Name?: string;
   product2Ingredients: string;
 }
+
+export interface ConflictPair {
+  compound1: string;
+  compound2: string;
+  mechanism: string;
+}
+
+export interface AnalyzeResponse {
+  status: Status;
+  summaryTitle: string;
+  activesProduct1: string[];
+  activesProduct2: string[];
+  conflictPairs: ConflictPair[];
+  biochemicalExplanation: string;
+  timingProtocol: {
+    scheduleType: Schedule;
+    guidanceText: string;
+  };
+  disclaimer: string;
+}
+
+// Aliases for UI and legacy imports
+export type CompatibilityStatus = Status | 'INSUFFICIENT_DATA';
+export type ScheduleType = Schedule | 'INERT';
+export type AnalysisResult = AnalyzeResponse;
+export type AnalyzeRequestBody = AnalyzeRequest;

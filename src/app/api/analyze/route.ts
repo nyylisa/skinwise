@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { analyzePairwiseCompatibility } from "@/src/lib/engine";
-import { AnalyzeRequestBody } from "@/src/types/analysis";
+import { analyzeCompatibility } from "@/src/lib/engine";
+import { AnalyzeRequest } from "@/src/types/analysis";
 
 export async function POST(req: NextRequest) {
   try {
-    const body: AnalyzeRequestBody = await req.json();
+    const body: AnalyzeRequest = await req.json();
 
     if (!body.product1Ingredients?.trim() || !body.product2Ingredients?.trim()) {
       return NextResponse.json(
@@ -13,12 +13,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const result = await analyzePairwiseCompatibility(
-      body.product1Ingredients,
-      body.product2Ingredients,
-      body.product1Name || "Product 1",
-      body.product2Name || "Product 2"
-    );
+    const result = await analyzeCompatibility({
+      product1Ingredients: body.product1Ingredients,
+      product2Ingredients: body.product2Ingredients,
+      product1Name: body.product1Name || "Product 1",
+      product2Name: body.product2Name || "Product 2"
+    });
 
     return NextResponse.json(result, { status: 200 });
   } catch (error: unknown) {

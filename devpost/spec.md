@@ -8,8 +8,8 @@ status: approved
 ## How This Works, In Plain Language
 SkinWise is a full-stack, single-page web utility built with Next.js and Tailwind CSS. When a user selects two products or pastes ingredient formulas, the browser sends both ingredient strings to a server-side API route (`app/api/analyze/route.ts`).
 
-Inside that API route, the server executes a **Deterministic Rule Engine**:
-1. `lib/actives.ts` normalizes and parses the raw INCI ingredient strings, extracting recognized active compounds (e.g., Salicylic Acid, Glycolic Acid, Retinol, L-Ascorbic Acid, Niacinamide, Peptides, Ceramides).
+Inside that API route, the server executes a **Hybrid ML & Rule Engine**:
+1. A **SetFit Few-Shot Classifier microservice** parses the raw INCI ingredient strings by semantic meaning, predicting active compound categories even with typos or synonyms (e.g., Salicylic Acid, Glycolic Acid, Retinol, L-Ascorbic Acid, Niacinamide, Peptides, Ceramides).
 2. `lib/matrix.ts` provides scientific conflict tables defining interaction rules across active classes (e.g., BHA + Retinoid &rarr; `CONFLICT`, Vitamin C + BHA &rarr; `CAUTION`, Retinol + Barrier Lipids &rarr; `SAFE`).
 3. `lib/engine.ts` evaluates the parsed actives against the conflict tables, deterministically determining the 4-state verdict badge (`CONFLICT`, `CAUTION`, `SAFE`, or `INSUFFICIENT_DATA`), identified conflict pairs, and the timing protocol schedule (`ALTERNATE_DAYS`, `AM_PM_SPLIT`, `LAYER_TOGETHER`, or `UNKNOWN`).
 4. `lib/gemini.ts` is invoked optionally to synthesize a natural language summary and biochemical explanation. If the Gemini API key is missing or the call fails, the deterministic engine supplies default rule-based scientific explanations and protocols instantly without downtime.
@@ -20,7 +20,7 @@ The API response is strictly validated against a shared Zod schema (`types/analy
 1. **Initial Load:** The client loads `app/page.tsx` on `http://localhost:3000`. In-memory state defaults to Case 1 presets: Card 1 has Paula's Choice 2% BHA and Card 2 has The Ordinary 0.5% Retinol (`prd.md > The Core Journey`, `prd.md > Screens and Layout`).
 2. **Preset, Ingredient Autocomplete, or Custom Input:** Clicking a top demo button (`components/PresetToolbar.tsx`) or picking a preset dropdown (`components/ProductInputCard.tsx`) updates local React state (`product1`, `product2`), populating product names and full INCI textareas from `lib/presets.ts`. Alternatively, users can search recognized active ingredients from `lib/actives.ts` with instant autocomplete or paste raw text. The card immediately displays recognized active chips or triggers an unrecognized ingredient warning notice (`prd.md > Quick-Load Demo Presets`, `prd.md > Product Input & Ingredient Handling`).
 3. **Trigger Analysis:** The user clicks "Check Compatibility". The client sets `isLoading = true`, locks inputs, and executes a `POST` request to `/api/analyze` passing `{ product1Name, product1Ingredients, product2Name, product2Ingredients }`.
-4. **Server Processing & Deterministic Evaluation:** `app/api/analyze/route.ts` receives the payload, validates request inputs via `AnalyzeRequestBody` schema, invokes `lib/actives.ts` to parse compounds, queries `lib/matrix.ts` rules, and runs `lib/engine.ts` to compute the verdict, conflict pairs, and timing protocol.
+4. **Server Processing & Hybrid Evaluation:** `app/api/analyze/route.ts` receives the payload, validates request inputs via `AnalyzeRequestBody` schema, invokes the SetFit classifier microservice to parse compounds, queries `lib/matrix.ts` rules, and runs `lib/engine.ts` to compute the verdict, conflict pairs, and timing protocol.
 5. **Optional LLM Summary:** The route handler optionally calls `lib/gemini.ts` to generate an enriched biochemical rationale. If Gemini is unreachable or disabled, built-in rule rationales are used.
 6. **Render Verdict:** The API responds with the validated `AnalysisResult` JSON matching `AnalysisResultSchema`. The client sets `isLoading = false` and mounts `components/ResultPanel.tsx` displaying the high-contrast 4-state verdict badge (**CONFLICT**, **CAUTION**, **SAFE**, or **INSUFFICIENT_DATA**), active pill tags, biochemical risk rationale, and timing schedule (`prd.md > Compatibility Analysis & Deterministic Rule Engine`).
 7. **Error Handling:** If the network fails or request payload is invalid, the client catches the exception and renders an inline warning banner with a "Retry Analysis" button while keeping user text intact (`prd.md > States and Boundaries`).
@@ -30,7 +30,7 @@ The API response is strictly validated against a shared Zod schema (`types/analy
 - **Styling:** Tailwind CSS — Provides utility-first styling for the clinical laboratory aesthetic (`slate-50`, `rose-600`, `amber-600`, `emerald-600`) and responsive side-by-side grid layout. [Tailwind CSS Docs](https://tailwindcss.com/docs)
 - **Icons:** `lucide-react` — Lightweight clinical iconography (ShieldAlert, AlertTriangle, CheckCircle2, RefreshCw, Clock, Sparkles). [Lucide Docs](https://lucide.dev)
 - **Schema Validation:** Zod — Validates runtime API request payloads and deterministic response structures via `types/analysis.ts`. [Zod Docs](https://zod.dev)
-- **Rule Engine:** Pure TypeScript modules (`lib/actives.ts`, `lib/matrix.ts`, `lib/engine.ts`) — Zero external runtime dependencies, 100% deterministic, sub-millisecond execution, zero hallucinations.
+- **Hybrid Engine:** SetFit Python microservice for robust semantic ingredient classification + Pure TypeScript modules (`lib/matrix.ts`, `lib/engine.ts`) for deterministic evaluation.
 - **Optional AI Summarizer:** Google Gemini (`gemini-2.5-flash` or `gemini-1.5-flash`) via `@google/genai` (or `@google/generative-ai`) in `lib/gemini.ts` — Provides optional natural language polish constrained strictly by the deterministic verdict. [Google Gen AI Docs](https://ai.google.dev/docs)
 
 ## Where It Runs and How Someone Tries It
@@ -93,9 +93,10 @@ Implements `prd.md > Compatibility Analysis & Deterministic Rule Engine`.
 
 ### Backend & Rule Engine (`lib/`, `app/api/analyze/route.ts`)
 
-#### Active Ingredient Parser (`lib/actives.ts`)
-- Defines `KNOWN_ACTIVES` canonical taxonomy and regular expression patterns used across both client-side autocomplete selection and server-side analysis.
-- Normalizes raw ingredient strings and matches known chemical active aliases (AHAs, BHAs, Retinoids, Vitamin C, Niacinamide, Peptides, Ceramides).
+#### Active Ingredient Classifier (SetFit Microservice)
+- Replaces the legacy `lib/actives.ts` regex approach.
+- A lightweight Python microservice hosting a SetFit few-shot text classification model.
+- Takes raw ingredient strings and classifies them into `KNOWN_ACTIVES` canonical taxonomy based on semantic meaning.
 - Returns structured array of detected active categories and matched names for each product.
 
 #### Active Conflict Matrix (`lib/matrix.ts`)
@@ -188,7 +189,7 @@ skinwise/
 │   ├── ProductInputCard.tsx      # Dual card with preset dropdown & editable textarea
 │   └── ResultPanel.tsx           # 3-tier verdict badge, active pills, explanation, timing protocol
 ├── lib/
-│   ├── actives.ts                # INCI ingredient parsing and active compound detection
+│   ├── actives.ts                # Client to interface with SetFit ML microservice
 │   ├── matrix.ts                 # Active conflict tables and scientific interaction rules
 │   ├── engine.ts                 # Pure deterministic compatibility evaluation engine
 │   ├── gemini.ts                 # Optional Google Gemini client for natural language summaries
@@ -208,7 +209,7 @@ skinwise/
 ```
 
 ## External Services and Dependencies
-- **Deterministic Rule Engine (Core):** Local TypeScript modules (`lib/actives.ts`, `lib/matrix.ts`, `lib/engine.ts`) with zero external API requirements.
+- **Hybrid Rule Engine (Core):** Local TypeScript modules (`lib/matrix.ts`, `lib/engine.ts`) paired with a Python SetFit classifier microservice.
 - **Optional Google Gemini API (`@google/genai` or `@google/generative-ai` in `lib/gemini.ts`):**
   - Model: `gemini-2.5-flash` (or `gemini-1.5-flash`)
   - Auth: `GEMINI_API_KEY` environment variable (optional; system falls back to rule rationales if omitted)
@@ -222,7 +223,7 @@ skinwise/
 - **Unverified Dual-Active Pairs:** If both products have recognized actives but no verified rule exists in the scientific matrix, the engine defaults to `CAUTION` with `UNKNOWN` schedule (never defaults to `SAFE`).
 
 ## What Was Simplified and Why
-- **Deterministic Rule Engine** instead of pure LLM evaluation: Guaranteed chemical accuracy and reproducible verdicts without latency, prompt drift, or hallucination.
+- **Hybrid ML & Rule Engine** instead of pure LLM evaluation: Few-shot ML provides robust ingredient identification, while deterministic rules guarantee chemical accuracy and reproducible verdicts without hallucination.
 - **Static In-Memory Presets** instead of dynamic cosmetic database web scrapers: Preloading verified popular formulas in `lib/presets.ts` guarantees instant, reliable demo data without fragile external web scraping dependencies.
 - **Session-Only Client State** instead of user authentication & accounts: Zero setup friction allows anyone (or hackathon judges) to evaluate compatibility instantly.
 

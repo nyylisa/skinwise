@@ -1,81 +1,142 @@
-import { ActiveCategory } from "./actives";
-import { CompatibilityStatus, ScheduleType } from "@/src/types/analysis";
+import { ActiveCategory } from './actives';
 
-export interface MatrixRule {
-  cat1: ActiveCategory;
-  cat2: ActiveCategory;
-  status: CompatibilityStatus;
-  scheduleType: ScheduleType;
-  title: string;
+export type Status = 'CONFLICT' | 'CAUTION' | 'SAFE' | 'UNKNOWN';
+export type Schedule =
+  | 'LAYER_TOGETHER'
+  | 'AM_PM_SPLIT'
+  | 'ALTERNATE_DAYS'
+  | 'UNKNOWN';
+
+export interface Rule {
+  a: ActiveCategory;
+  b: ActiveCategory;
+  status: Status;
+  schedule: Schedule;
   mechanism: string;
-  defaultExplanation: string;
-  defaultGuidance: string;
+  instructions: string;
 }
 
-export const COMPATIBILITY_RULES: MatrixRule[] = [
+export const RULES: Rule[] = [
+  // ── CONFLICTS ──────────────────────────────────────────────
   {
-    cat1: "RETINOID",
-    cat2: "DIRECT_ACID",
-    status: "CONFLICT",
-    scheduleType: "ALTERNATE_DAYS",
-    title: "High Irritation & Barrier Compromise Risk",
-    mechanism:
-      "Keratolytic chemical exfoliants degrade lipid barrier cohesion prior to retinoid cellular turnover, severely increasing transepidermal water loss and causing chemical dermatitis.",
-    defaultExplanation:
-      "Combining direct exfoliating acids with retinoids strips your protective skin barrier and over-accelerates cell turnover. Layering them together causes excessive peeling, redness, and micro-tears.",
-    defaultGuidance:
-      "Do not use these products in the same routine. Apply Product 1 on Monday/Wednesday evenings and Product 2 on Tuesday/Friday evenings. Always wear SPF 30+ every morning.",
+    a: 'RETINOID', b: 'DIRECT_ACID',
+    status: 'CONFLICT', schedule: 'ALTERNATE_DAYS',
+    mechanism: 'Retinoids and exfoliating acids both increase cell turnover and may raise irritation risk.',
+    instructions: 'Use on alternate evenings. Start slowly and reduce frequency if irritation occurs.',
   },
   {
-    cat1: "DIRECT_ACID",
-    cat2: "VITAMIN_C",
-    status: "CAUTION",
-    scheduleType: "AM_PM_SPLIT",
-    title: "Low-pH Acid Stacking & Flushing Risk",
-    mechanism:
-      "Concurrent application of high-potency L-Ascorbic Acid (pH < 3.5) and direct AHAs/BHAs compounds acidic stress on the stratum corneum, triggering erythema and burning.",
-    defaultExplanation:
-      "Stacking low-pH direct acids on top of pure Vitamin C overwhelms the skin's natural acid mantle. This combination frequently causes acute stinging and persistent flushing.",
-    defaultGuidance:
-      "Split application across your day: apply Product 1 (Vitamin C) during your morning routine under sunscreen, and apply Product 2 (Direct Acid) during your evening routine.",
+    a: 'DIRECT_ACID', b: 'PEPTIDE',
+    status: 'CONFLICT', schedule: 'AM_PM_SPLIT',
+    mechanism: 'Low-pH acids can break down peptide structures, reducing their effectiveness.',
+    instructions: 'Use the acid at night and peptides in the morning, or on separate days.',
   },
   {
-    cat1: "RETINOID",
-    cat2: "VITAMIN_C",
-    status: "CAUTION",
-    scheduleType: "AM_PM_SPLIT",
-    title: "Absorption Interference & Staggered pH Needs",
-    mechanism:
-      "L-Ascorbic acid requires an acidic pH environment (<3.5) for optimal stability, whereas retinoid conversion pathways function near neutral pH (5.5–6.0).",
-    defaultExplanation:
-      "Pure Vitamin C and retinoids perform best in completely different pH environments. Applying them together destabilizes their efficacy and increases irritation.",
-    defaultGuidance:
-      "Separate them into AM and PM sessions: apply Vitamin C in the morning to protect against free radicals, and reserve your Retinoid for nighttime cellular repair.",
+    a: 'VITAMIN_C', b: 'PEPTIDE',
+    status: 'CONFLICT', schedule: 'AM_PM_SPLIT',
+    mechanism: 'Ascorbic acid can destabilize copper peptides and reduce their activity.',
+    instructions: 'Use Vitamin C in the AM and peptides in the PM.',
+  },
+
+  // ── CAUTIONS ───────────────────────────────────────────────
+  {
+    a: 'RETINOID', b: 'VITAMIN_C',
+    status: 'CAUTION', schedule: 'AM_PM_SPLIT',
+    mechanism: 'Both are potent actives; layering them in the same step can increase irritation.',
+    instructions: 'Use Vitamin C in the morning and the retinoid at night.',
   },
   {
-    cat1: "RETINOID",
-    cat2: "BARRIER_SUPPORT",
-    status: "SAFE",
-    scheduleType: "LAYER_TOGETHER",
-    title: "Synergistic Barrier Support & Buffering",
-    mechanism:
-      "Ceramides, hyaluronic acid, and barrier lipids replenish extracellular matrix bilayers, mitigating typical retinization dryness and peeling.",
-    defaultExplanation:
-      "Ceramides and hydrating lipids cushion your skin against irritation without lowering retinoid performance. This pairing keeps the moisture barrier healthy and hydrated.",
-    defaultGuidance:
-      "Layer together during your evening routine: apply your active treatment first, allow it to absorb for 60 seconds, then seal with the barrier-replenishing formula.",
+    a: 'DIRECT_ACID', b: 'VITAMIN_C',
+    status: 'CAUTION', schedule: 'AM_PM_SPLIT',
+    mechanism: 'Vitamin C works best at low pH and can be destabilized by acidic exfoliants used at the same time.',
+    instructions: 'Use Vitamin C in the morning and the acid at night.',
+  },
+  {
+    a: 'DIRECT_ACID', b: 'ANTIOXIDANT',
+    status: 'CAUTION', schedule: 'AM_PM_SPLIT',
+    mechanism: 'Some antioxidants are less stable at low pH or may increase sensitivity when combined with acids.',
+    instructions: 'Space them apart: acid at night, antioxidant in the morning.',
+  },
+  {
+    a: 'RETINOID', b: 'PIGMENT_REGULATOR',
+    status: 'CAUTION', schedule: 'AM_PM_SPLIT',
+    mechanism: 'Both can increase skin sensitivity during adjustment periods.',
+    instructions: 'Use the pigment regulator in the AM and retinoid in the PM.',
+  },
+
+  // ── SAFE WITH SYNERGY ──────────────────────────────────────
+  {
+    a: 'RETINOID', b: 'BARRIER_SUPPORT',
+    status: 'SAFE', schedule: 'LAYER_TOGETHER',
+    mechanism: 'Barrier ingredients can reduce retinoid dryness and support tolerance.',
+    instructions: 'Apply the retinoid first, then seal with the barrier cream.',
+  },
+  {
+    a: 'RETINOID', b: 'HUMECTANT',
+    status: 'SAFE', schedule: 'LAYER_TOGETHER',
+    mechanism: 'Humectants help offset the dryness often associated with retinoid use.',
+    instructions: 'Layer retinoid first, then hydrating product.',
+  },
+  {
+    a: 'RETINOID', b: 'SOOTHING',
+    status: 'SAFE', schedule: 'LAYER_TOGETHER',
+    mechanism: 'Soothing ingredients help calm the skin during retinoid adjustment.',
+    instructions: 'Can be layered together in the evening.',
+  },
+  {
+    a: 'DIRECT_ACID', b: 'BARRIER_SUPPORT',
+    status: 'SAFE', schedule: 'LAYER_TOGETHER',
+    mechanism: 'Barrier support helps buffer potential irritation from exfoliating acids.',
+    instructions: 'Apply acid first, then barrier cream.',
+  },
+  {
+    a: 'DIRECT_ACID', b: 'SOOTHING',
+    status: 'SAFE', schedule: 'LAYER_TOGETHER',
+    mechanism: 'Soothing ingredients can calm the skin after acid exfoliation.',
+    instructions: 'Layer together in the same routine.',
+  },
+  {
+    a: 'VITAMIN_C', b: 'ANTIOXIDANT',
+    status: 'SAFE', schedule: 'LAYER_TOGETHER',
+    mechanism: 'Ferulic acid and Vitamin E stabilize Vitamin C and boost its effectiveness.',
+    instructions: 'Layer together in your morning routine for maximum antioxidant protection.',
+  },
+  {
+    a: 'VITAMIN_C', b: 'BARRIER_SUPPORT',
+    status: 'SAFE', schedule: 'LAYER_TOGETHER',
+    mechanism: 'Barrier support helps reduce potential irritation from high-concentration Vitamin C.',
+    instructions: 'Apply Vitamin C first, then the barrier-supporting product.',
+  },
+  {
+    a: 'VITAMIN_C', b: 'PIGMENT_REGULATOR',
+    status: 'SAFE', schedule: 'LAYER_TOGETHER',
+    mechanism: 'Both ingredients target pigmentation through complementary mechanisms.',
+    instructions: 'Layer together in the AM for a brightening routine.',
+  },
+  {
+    a: 'NIACINAMIDE', b: 'DIRECT_ACID',
+    status: 'SAFE', schedule: 'LAYER_TOGETHER',
+    mechanism: 'Modern research shows niacinamide is stable with acids.',
+    instructions: 'Can be layered together.',
+  },
+  {
+    a: 'NIACINAMIDE', b: 'VITAMIN_C',
+    status: 'SAFE', schedule: 'LAYER_TOGETHER',
+    mechanism: 'Despite older concerns, modern formulations are compatible.',
+    instructions: 'Can be layered together.',
+  },
+  {
+    a: 'NIACINAMIDE', b: 'RETINOID',
+    status: 'SAFE', schedule: 'LAYER_TOGETHER',
+    mechanism: 'Niacinamide can help reduce retinoid irritation.',
+    instructions: 'Layer together in the evening.',
   },
 ];
 
-export function findRuleMatch(
-  cat1: ActiveCategory,
-  cat2: ActiveCategory
-): MatrixRule | null {
-  return (
-    COMPATIBILITY_RULES.find(
-      (r) =>
-        (r.cat1 === cat1 && r.cat2 === cat2) ||
-        (r.cat1 === cat2 && r.cat2 === cat1)
-    ) || null
+export function findRule(
+  a: ActiveCategory,
+  b: ActiveCategory
+): Rule | undefined {
+  return RULES.find(
+    r => (r.a === a && r.b === b) || (r.a === b && r.b === a)
   );
 }

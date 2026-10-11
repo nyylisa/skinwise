@@ -47,7 +47,7 @@ export default function ResultPanel({ result, productNames }: ResultPanelProps) 
           <div className="sw-card mt-4 flex items-start gap-3 p-5">
             <StatusIcon status={severity} size={20} className="mt-0.5" />
             <p>
-              {result.status === "INSUFFICIENT_DATA"
+              {result.status === "INSUFFICIENT_DATA" || result.status === "UNKNOWN"
                 ? "We couldn't identify enough known actives to check for conflicts. Double-check the ingredient lists."
                 : "No conflicting pairs were found between these two products."}
             </p>

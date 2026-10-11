@@ -74,8 +74,8 @@ export default function IngredientInput({ onSubmit, submitLabel = "Use this prod
             {parsed.length} ingredient{parsed.length === 1 ? "" : "s"} found
           </p>
           <ul className="mt-2 flex flex-wrap gap-1.5">
-            {parsed.slice(0, PREVIEW_LIMIT).map((ing) => (
-              <li key={ing}>
+            {parsed.slice(0, PREVIEW_LIMIT).map((ing, idx) => (
+              <li key={`${ing}-${idx}`}>
                 <IngredientTag label={ing} />
               </li>
             ))}

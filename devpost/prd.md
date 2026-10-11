@@ -11,8 +11,8 @@ Source: `scope.md > Who It's For`, `scope.md > The Core Loop`.
 ## The Core Journey
 1. **Arrival & Initial Load:** The user lands on the single-page web app. The interface displays the top "Demo Quick-Load" toolbar (`components/PresetToolbar.tsx`), and the two product cards (`components/ProductInputCard.tsx`) are pre-populated with Case 1 (Paula's Choice 2% BHA and The Ordinary 0.5% Retinol) so the app is immediately demonstrative.
 2. **Preset Selection, Ingredient Autocomplete, or Custom Input:** The user can either keep the pre-filled products, click a quick-load demo button, select a product from each card's preset dropdown (populated from `lib/presets.ts`), search and select recognized active ingredients from `lib/actives.ts`, or paste custom INCI ingredients into either card's editable textarea. The card provides upfront recognition feedback—displaying recognized active chips or alerting the user if an entered ingredient is unrecognized by the system before evaluating.
-3. **Execution:** The user clicks the primary "Check Compatibility" button. The client sends the payload to `app/api/analyze/route.ts`. The server executes the Deterministic Rule Engine:
-   - `lib/actives.ts` parses and extracts recognized active compounds.
+3. **Execution:** The user clicks the primary "Check Compatibility" button. The client sends the payload to `app/api/analyze/route.ts`. The server executes the Hybrid ML & Rule Engine:
+   - A SetFit Few-Shot Classifier replaces basic regex to parse and extract recognized active compounds by semantic meaning.
    - `lib/matrix.ts` cross-references the compounds against scientific active conflict tables.
    - `lib/engine.ts` deterministically evaluates the compatibility verdict, conflict pairs, and schedule type.
    - `lib/gemini.ts` is invoked optionally to synthesize a crisp natural language summary and biochemical explanation.
@@ -70,7 +70,7 @@ Source: `scope.md > The Unique Kernel`, `scope.md > What "Working" Looks Like`
 - As a user, I want reliable, scientifically grounded conflict detection and actionable scheduling advice without AI hallucinations.
   - [ ] Clicking "Check Compatibility" sends both product inputs to `app/api/analyze/route.ts`.
   - [ ] Displays a visual loading spinner and disables the button during processing.
-  - [ ] **Ingredient Parsing (`lib/actives.ts`):** Normalizes chemical strings and scans for active compound signatures (Retinoids, AHAs, BHAs, L-Ascorbic Acid, Niacinamide, Peptides, Ceramides).
+  - [ ] **Ingredient Classification (SetFit):** Replaces legacy regex parsing. A small SetFit model takes ingredients and predicts their active compound signatures (Retinoids, AHAs, BHAs, L-Ascorbic Acid, Niacinamide, Peptides, Ceramides) based on semantic meaning.
   - [ ] **Conflict Matrix Lookup (`lib/matrix.ts`):** Checks recognized actives against pre-verified scientific conflict tables.
   - [ ] **Deterministic Evaluation (`lib/engine.ts`):** Evaluates interaction status into a strict 4-state verdict (**CONFLICT**, **CAUTION**, **SAFE**, or **INSUFFICIENT_DATA**), extracts conflict pairs, and assigns the appropriate timing protocol (`ALTERNATE_DAYS`, `AM_PM_SPLIT`, `LAYER_TOGETHER`, `UNKNOWN`).
   - [ ] **Optional Gemini Summaries (`lib/gemini.ts`):** When enabled, generates a natural language summary and biochemical rationale constrained strictly by the deterministic verdict; if disabled or offline, built-in rule rationales are returned seamlessly.
@@ -85,7 +85,7 @@ To ensure clean modularity and separation of concerns:
 - **Shared Schema:**
   - `types/analysis.ts`: Shared Zod schema and TypeScript interfaces for request inputs (`AnalyzeRequestSchema`) and response outputs (`AnalysisResponseSchema`).
 - **Backend & Rule Engine:**
-  - `lib/actives.ts`: INCI ingredient parsing, alias matching, and active compound detection.
+  - SetFit Classifier microservice / Python script: Few-shot ML model for robust semantic ingredient categorization, replacing fragile regex (`lib/actives.ts`).
   - `lib/matrix.ts`: Active conflict tables and scientific interaction rules.
   - `lib/engine.ts`: Core deterministic evaluation logic computing status, conflict pairs, and timing protocols.
   - `lib/gemini.ts`: Optional Google Gemini client for generating natural language summaries and biochemical rationales.

@@ -28,7 +28,11 @@ doc: learner-profile
 - Practice controlled AI architecture and spec-driven agent discipline: establishing clear specifications and holding firm boundaries before generating code.
 
 ## Learning Moments
-*(Will be populated during project planning and build)*
+- **Decoupling Semantic AI from Deterministic Safety Rules:** Utilizing a lightweight SetFit few-shot model (`skinwise-ml`) fine-tuned on BGE embeddings to classify messy INCI ingredient strings solved the fragility of naive regex. Meanwhile, routing the classified compounds through a deterministic matrix (`src/lib/matrix.ts`) ensured 100% reproducible chemical safety verdicts with zero LLM hallucination risk.
+- **Handling Real-World Formulation Nuances (The pH Adjuster Trap):** In real skincare formulas, chemical names like "Citric Acid" or "Disodium EDTA" frequently appear at <0.5% concentrations at the end of cleanser lists as pH adjusters or chelators, not active chemical exfoliants. Flagging them as aggressive `DIRECT_ACID` produced false positives (e.g., falsely warning against using Retinol with a basic cleanser). Resolving this required:
+  1. Expanding training data (`extra_training.csv`) with `NON_TARGET` labels for formulation inactives.
+  2. Introducing a `CURATED_OVERRIDE` guardrail in `src/lib/detect-ml.ts` so known cosmetic formulation inactives never trigger false conflict warnings.
+- **Resilient Fallback Architectures:** Implementing `detect-safe.ts` so the Next.js API automatically falls back to an in-memory longest-alias regex index (`src/lib/detect.ts`) if the Python microservice is offline or warming up, guaranteeing zero downtime.
 
 ## Interests, Inspirations, and Goals
 - Building a focused, reliable skincare compatibility utility to prevent chemical irritation from overlapping actives.
